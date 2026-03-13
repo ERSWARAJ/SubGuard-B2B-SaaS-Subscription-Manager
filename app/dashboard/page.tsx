@@ -97,6 +97,7 @@ export default function DashboardPage() {
   const [submitSuccess, setSubmitSuccess] = useState<boolean>(false)
   const [serverErr, setServerErr]         = useState<string>("")
   const [activeTab, setActiveTab]         = useState<"tools" | "requests">("tools")
+  const [showLogoutModal, setShowLogoutModal] = useState(false)
 
   const loadData = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession()
@@ -123,6 +124,15 @@ export default function DashboardPage() {
 
   useEffect(() => { loadData() }, [loadData])
 
+useEffect(() => {
+  const channel = supabase
+    .channel("employee-realtime")
+    .on("postgres_changes", { event: "*", schema: "public", table: "requests" }, () => { loadData() })
+    .on("postgres_changes", { event: "*", schema: "public", table: "subscriptions" }, () => { loadData() })
+    .subscribe()
+  return () => { supabase.removeChannel(channel) }
+}, [loadData])
+
   const openModal = () => {
     setForm({ tool_name: "", monthly_cost: "", justification: "" })
     setFormErrs({})
@@ -134,6 +144,23 @@ export default function DashboardPage() {
   const handleSubmit = async () => {
     const errs = validateForm(form)
     if (Object.keys(errs).length) { setFormErrs(errs); return }
+
+    const alreadyOwned = subscriptions.some(
+      s => s.tool_name.toLowerCase().trim() === form.tool_name.toLowerCase().trim()
+    )
+    if (alreadyOwned) {
+      setFormErrs({ tool_name: "You already have an active license for this tool." })
+      return
+    }
+
+    const alreadyRequested = requests.some(
+      r => r.tool_name.toLowerCase().trim() === form.tool_name.toLowerCase().trim()
+        && r.status === "approved"
+    )
+    if (alreadyRequested) {
+      setFormErrs({ tool_name: "This tool has already been approved for you." })
+      return
+    }
     setSubmitting(true)
     setServerErr("")
     const { error } = await supabase.from("requests").insert({
@@ -150,7 +177,8 @@ export default function DashboardPage() {
     setTimeout(() => setModalOpen(false), 1200)
   }
 
-  const logout = async () => { await supabase.auth.signOut(); router.push("/login") }
+  const logout = () => setShowLogoutModal(true)
+  const confirmLogout = async () => { await supabase.auth.signOut(); router.push("/login") }
   const initials = (e: string) => e.split("@")[0].slice(0, 2).toUpperCase()
   const mySpend  = subscriptions.reduce((s, r) => s + r.monthly_cost, 0)
 
@@ -389,7 +417,20 @@ export default function DashboardPage() {
               <div className="sb-email">{userEmail}</div>
               <div className="sb-role">Employee</div>
             </div>
-            <button className="sb-logout" onClick={logout} title="Sign out"><IcoLogout /></button>
+            <button className="sb-logout" onClick={logout} data-test="logout-btn" title="Sign out"><IcoLogout /></button>
+
+{showLogoutModal && (
+  <div style={{ position:"fixed", inset:0, zIndex:999, background:"rgba(0,0,0,0.6)", backdropFilter:"blur(4px)", display:"flex", alignItems:"center", justifyContent:"center" }}>
+    <div style={{ background:"#0e0e15", border:"1px solid rgba(255,255,255,0.08)", borderRadius:12, padding:"28px 28px 22px", width:320, fontFamily:"'Inter',sans-serif" }}>
+      <div style={{ fontSize:14, fontWeight:700, color:"#ededff", marginBottom:8 }}>Sign out of SubGuard?</div>
+      <div style={{ fontSize:12, color:"#404468", marginBottom:22 }}>You will be returned to the login screen.</div>
+      <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
+        <button onClick={() => setShowLogoutModal(false)} style={{ padding:"7px 16px", borderRadius:7, border:"1px solid rgba(255,255,255,0.08)", background:"none", color:"#8890b4", fontSize:12, fontWeight:600, cursor:"pointer" }}>Cancel</button>
+        <button onClick={confirmLogout} style={{ padding:"7px 16px", borderRadius:7, border:"1px solid rgba(251,79,114,0.3)", background:"rgba(251,79,114,0.08)", color:"#fb4f72", fontSize:12, fontWeight:600, cursor:"pointer" }}>Sign out</button>
+      </div>
+    </div>
+  </div>
+)}
           </div>
         </aside>
 
