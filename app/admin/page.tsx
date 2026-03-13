@@ -18,6 +18,7 @@ interface Request {
   justification: string
   status: "pending" | "approved" | "denied"
   requested_by: string
+  requester_email?: string
 }
 
 const IcoDollar = () => (
@@ -91,6 +92,8 @@ export default function AdminPage() {
   const [actionId, setActionId] = useState<string | null>(null)
   const [visible, setVisible]   = useState(false)
   const [tab, setTab]           = useState<"pending" | "active" | "history">("pending")
+  const [showLogoutModal, setShowLogoutModal] = useState(false)
+  const [userMap, setUserMap] = useState<Record<string, string>>({})
 
   const totalSpend = subs.reduce((s, r) => s + r.monthly_cost, 0)
   const pending    = reqs.filter(r => r.status === "pending")
@@ -109,13 +112,26 @@ export default function AdminPage() {
     setEmail(u.email)
     const { data: s } = await supabase.from("subscriptions").select("*").returns<Subscription[]>()
     setSubs(s ?? [])
-    const { data: r } = await supabase.from("requests").select("*").order("id", { ascending: false }).returns<Request[]>()
-    setReqs(r ?? [])
+   const { data: r } = await supabase.from("requests").select("*").order("id", { ascending: false }).returns<Request[]>()
+   const { data: userList } = await supabase.from("users").select("id, email")
+   const map = Object.fromEntries((userList ?? []).map((u: { id: string; email: string }) => [u.id, u.email]))
+setUserMap(map)
+   const enriched = (r ?? []).map(req => ({ ...req, requester_email: map[req.requested_by] ?? req.requested_by }))
+   setReqs(enriched)
     setLoading(false)
     setTimeout(() => setVisible(true), 80)
   }, [router])
 
   useEffect(() => { load() }, [load])
+
+useEffect(() => {
+  const channel = supabase
+    .channel("admin-realtime")
+    .on("postgres_changes", { event: "*", schema: "public", table: "requests" }, () => { load() })
+    .on("postgres_changes", { event: "*", schema: "public", table: "subscriptions" }, () => { load() })
+    .subscribe()
+  return () => { supabase.removeChannel(channel) }
+}, [load])
 
   const decide = async (req: Request, dec: "approved" | "denied") => {
     setActionId(req.id)
@@ -131,7 +147,13 @@ export default function AdminPage() {
     setActionId(null)
   }
 
-  const logout = async () => { await supabase.auth.signOut(); router.push("/login") }
+  // ── CHANGED: added confirmation before signing out ──
+  const logout = () => setShowLogoutModal(true)
+const confirmLogout = async () => {
+    await supabase.auth.signOut()
+    router.push("/login")
+  }
+
   const initials = (e: string) => e.split("@")[0].slice(0, 2).toUpperCase()
 
   if (loading) {
@@ -196,20 +218,17 @@ export default function AdminPage() {
 
         .root { font-family:var(--f); -webkit-font-smoothing:antialiased; min-height:100vh; background:var(--bg); color:var(--t1); display:flex; }
 
-        /* grid background */
         .root::before {
           content:''; position:fixed; inset:0; z-index:0; pointer-events:none;
           background-image: linear-gradient(var(--b0) 1px,transparent 1px), linear-gradient(90deg,var(--b0) 1px,transparent 1px);
           background-size: 44px 44px;
         }
-        /* top glow */
         .root::after {
           content:''; position:fixed; top:-80px; left:50%; transform:translateX(-50%);
           width:700px; height:220px; z-index:0; pointer-events:none;
           background: radial-gradient(ellipse at 50% 0%, rgba(79,142,247,0.1) 0%, transparent 60%);
         }
 
-        /* ── SIDEBAR ── */
         .sidebar {
           position: fixed; left:0; top:0; bottom:0; width:212px; z-index:60;
           background: rgba(7,7,11,0.92); backdrop-filter: blur(24px);
@@ -270,7 +289,6 @@ export default function AdminPage() {
         }
         .sb-logout:hover { color:var(--red); border-color:var(--red-b); background:var(--red-d); }
 
-        /* ── TOPBAR ── */
         .topbar {
           position:fixed; top:0; left:212px; right:0; height:50px; z-index:50;
           background:rgba(7,7,11,0.88); backdrop-filter:blur(24px);
@@ -285,16 +303,13 @@ export default function AdminPage() {
         .status-dot { width:6px; height:6px; border-radius:50%; background:var(--green); box-shadow:0 0 7px var(--green); animation:admin-pulse 2.5s infinite; }
         .status-text { font-size:10.5px; font-family:var(--fm); color:var(--t3); }
 
-        /* ── MAIN ── */
         .main { margin-left:212px; padding-top:50px; flex:1; position:relative; z-index:1; }
         .content { padding:24px 24px 80px; max-width:1100px; }
 
-        /* ── PAGE HEADER ── */
         .page-h { margin-bottom:22px; }
         .page-title { font-size:19px; font-weight:700; letter-spacing:-0.6px; color:var(--t1); line-height:1; margin-bottom:4px; }
         .page-sub   { font-size:11px; color:var(--t3); font-family:var(--fm); }
 
-        /* ── STAT CARDS ── */
         .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:22px; }
         @media(max-width:1000px){ .stats{grid-template-columns:repeat(2,1fr);} }
 
@@ -329,7 +344,6 @@ export default function AdminPage() {
         .bar-track  { height:2px; background:var(--s3); border-radius:2px; overflow:hidden; margin-top:9px; }
         .bar-fill   { height:100%; background:linear-gradient(90deg,var(--green),var(--blue)); border-radius:2px; transition:width 1.2s ease; }
 
-        /* ── PANEL ── */
         .panel { background:var(--s0); border:1px solid var(--b0); border-radius:var(--r2); overflow:hidden; }
 
         .tabs { display:flex; border-bottom:1px solid var(--b0); background:var(--s1); padding:0 18px; }
@@ -357,7 +371,6 @@ export default function AdminPage() {
         .strip-item { display:flex; align-items:center; gap:5px; }
         .strip-dot  { width:5px; height:5px; border-radius:50%; background:currentColor; }
 
-        /* ── TABLE ── */
         .tbl-wrap  { overflow-x:auto; }
         .tbl       { width:100%; border-collapse:collapse; }
         .th {
@@ -403,14 +416,12 @@ export default function AdminPage() {
       `}</style>
 
       <div className="root">
-        {/* ─── SIDEBAR ─── */}
         <aside className="sidebar">
           <div className="sb-brand">
             <div className="sb-logo"><IcoShield /></div>
             <span className="sb-name">SubGuard</span>
             <span className="sb-badge">Admin</span>
           </div>
-
           <nav className="sb-nav">
             <span className="sb-section">Management</span>
             {navItems.map(item => (
@@ -429,18 +440,29 @@ export default function AdminPage() {
               </button>
             ))}
           </nav>
-
           <div className="sb-footer">
             <div className="sb-avatar">{initials(adminEmail)}</div>
             <div className="sb-user">
               <div className="sb-email">{adminEmail}</div>
               <div className="sb-role">Administrator</div>
             </div>
-            <button className="sb-logout" onClick={logout} title="Sign out"><IcoLogout /></button>
+            <button className="sb-logout" onClick={logout} data-test="logout-btn" title="Sign out"><IcoLogout /></button>
+
+{showLogoutModal && (
+  <div style={{ position:"fixed", inset:0, zIndex:999, background:"rgba(0,0,0,0.6)", backdropFilter:"blur(4px)", display:"flex", alignItems:"center", justifyContent:"center" }}>
+    <div style={{ background:"#0e0e15", border:"1px solid rgba(255,255,255,0.08)", borderRadius:12, padding:"28px 28px 22px", width:320, fontFamily:"'Inter',sans-serif" }}>
+      <div style={{ fontSize:14, fontWeight:700, color:"#ededff", marginBottom:8 }}>Sign out of SubGuard?</div>
+      <div style={{ fontSize:12, color:"#404468", marginBottom:22 }}>You will be returned to the login screen.</div>
+      <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
+        <button onClick={() => setShowLogoutModal(false)} style={{ padding:"7px 16px", borderRadius:7, border:"1px solid rgba(255,255,255,0.08)", background:"none", color:"#8890b4", fontSize:12, fontWeight:600, cursor:"pointer" }}>Cancel</button>
+        <button onClick={confirmLogout} style={{ padding:"7px 16px", borderRadius:7, border:"1px solid rgba(251,79,114,0.3)", background:"rgba(251,79,114,0.08)", color:"#fb4f72", fontSize:12, fontWeight:600, cursor:"pointer" }}>Sign out</button>
+      </div>
+    </div>
+  </div>
+)}
           </div>
         </aside>
 
-        {/* ─── TOPBAR ─── */}
         <header className="topbar">
           <div className="breadcrumb">
             <span>subguard</span>
@@ -457,7 +479,6 @@ export default function AdminPage() {
           </div>
         </header>
 
-        {/* ─── MAIN ─── */}
         <main className="main">
           <div className="content">
             <div className="page-h">
@@ -465,7 +486,6 @@ export default function AdminPage() {
               <p className="page-sub">Company-wide subscription overview and request management.</p>
             </div>
 
-            {/* ── STAT CARDS ── */}
             <div className="stats">
               <div className={`stat${visible ? " show" : ""}`} style={{ transitionDelay: "0ms" }} data-test="total-spend">
                 <div className="stat-top">
@@ -522,7 +542,6 @@ export default function AdminPage() {
               </div>
             </div>
 
-            {/* ── PANEL ── */}
             <div className="panel">
               <div className="tabs">
                 <button className={`tab-btn${tab === "pending" ? " on" : ""}`} onClick={() => setTab("pending")}>
@@ -539,7 +558,6 @@ export default function AdminPage() {
                 </button>
               </div>
 
-              {/* ── PENDING TAB ── */}
               {tab === "pending" && (
                 <>
                   <div className="strip">
@@ -577,12 +595,13 @@ export default function AdminPage() {
                                   <span className="cdot" style={{ background: "var(--amber)", boxShadow: "0 0 6px var(--amber)" }} />
                                   <div>
                                     <div className="tool-name">{req.tool_name}</div>
-                                    <div className="tool-id">#{req.id.slice(0, 8)}</div>
+                                    {/* FIXED: String(req.id) prevents TypeError when id is not a plain string */}
+                                    <div className="tool-id">#{String(req.id).slice(0, 8)}</div>
                                   </div>
                                 </div>
                               </td>
                               <td className="td"><span className="cost-val">${req.monthly_cost}/mo</span></td>
-                              <td className="td"><span className="email-val">{req.requested_by}</span></td>
+                              <td className="td"><span className="email-val">{req.requester_email ?? req.requested_by}</span></td>
                               <td className="td"><span className="just-val" title={req.justification}>{req.justification}</span></td>
                               <td className="td">
                                 <div className="actions">
@@ -613,7 +632,6 @@ export default function AdminPage() {
                 </>
               )}
 
-              {/* ── ACTIVE SUBSCRIPTIONS TAB ── */}
               {tab === "active" && (
                 <div className="tbl-wrap">
                   {subs.length === 0 ? (
@@ -640,7 +658,7 @@ export default function AdminPage() {
                               </div>
                             </td>
                             <td className="td"><span className="cost-val">${sub.monthly_cost}/mo</span></td>
-                            <td className="td"><span className="email-val">{sub.user_id}</span></td>
+                            <td className="td"><span className="email-val">{userMap[sub.user_id] ?? sub.user_id}</span></td>
                           </tr>
                         ))}
                       </tbody>
@@ -649,7 +667,6 @@ export default function AdminPage() {
                 </div>
               )}
 
-              {/* ── HISTORY TAB ── */}
               {tab === "history" && (
                 <div className="tbl-wrap">
                   {reqs.length === 0 ? (
@@ -680,7 +697,7 @@ export default function AdminPage() {
                               </div>
                             </td>
                             <td className="td"><span className="cost-val">${req.monthly_cost}/mo</span></td>
-                            <td className="td"><span className="email-val">{req.requested_by}</span></td>
+                            <td className="td"><span className="email-val">{req.requester_email ?? req.requested_by}</span></td>
                             <td className="td">
                               <span className={`badge ${req.status}`}>
                                 <span className="bdot" />{req.status}
