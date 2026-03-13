@@ -236,4 +236,4 @@ Zero errors required. The codebase enforces **strict TypeScript** — no `any` t
 
 ## License
 
-MIT — built for hackathon purposes.
+#MIT — built for hackathon purposes.
