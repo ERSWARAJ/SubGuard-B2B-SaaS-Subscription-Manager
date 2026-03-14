@@ -149,6 +149,16 @@ export default function LoginPage() {
   const [mounted, setMounted]           = useState<boolean>(false)
   const [selectedRole, setSelectedRole] = useState<"employee" | "admin">("employee")
   const [darkMode, setDarkMode]         = useState<boolean>(true)
+  const [failCount, setFailCount]       = useState<number>(() => {
+    if (typeof window === "undefined") return 0
+    const locked = localStorage.getItem("sg-lockout-until")
+    if (locked && Date.now() < Number(locked)) return 5
+    return Number(localStorage.getItem("sg-fail-count") || "0")
+  })
+  const [lockedUntil, setLockedUntil]   = useState<number>(() => {
+    if (typeof window === "undefined") return 0
+    return Number(localStorage.getItem("sg-lockout-until") || "0")
+  })
 
   useEffect(() => { setMounted(true) }, [])
 
@@ -158,6 +168,12 @@ export default function LoginPage() {
   }, [darkMode])
 
   const handleLogin = async (): Promise<void> => {
+    // ── LOCKOUT CHECK ──
+    if (Date.now() < lockedUntil) {
+      const mins = Math.ceil((lockedUntil - Date.now()) / 60000)
+      setServerErr(`Too many failed attempts. Try again in ${mins} minute${mins > 1 ? "s" : ""}.`)
+      return
+    }
     const eErr = validateEmail(email)
     if (eErr) { setEmailDirty(true); setEmailErr(eErr); return }
     if (!password) { setServerErr("Password is required."); return }
@@ -168,9 +184,24 @@ export default function LoginPage() {
 
     if (authError) {
       setLoading(false)
-      setServerErr(authError.message)
+      const newCount = failCount + 1
+      setFailCount(newCount)
+      localStorage.setItem("sg-fail-count", String(newCount))
+      if (newCount >= 5) {
+        const lockUntil = Date.now() + 5 * 60 * 1000
+        setLockedUntil(lockUntil)
+        localStorage.setItem("sg-lockout-until", String(lockUntil))
+        setServerErr("Too many failed attempts. Account locked for 5 minutes.")
+      } else {
+        setServerErr(`Invalid credentials. ${5 - newCount} attempt${5 - newCount > 1 ? "s" : ""} remaining.`)
+      }
       return
     }
+    // ── RESET ON SUCCESS ──
+    setFailCount(0)
+    setLockedUntil(0)
+    localStorage.removeItem("sg-fail-count")
+    localStorage.removeItem("sg-lockout-until")
 
     const { data: userRow, error: roleError } = await supabase
       .from("users")

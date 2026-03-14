@@ -108,7 +108,8 @@ export default function DashboardPage() {
   const [serverErr, setServerErr]         = useState<string>("")
   const [activeTab, setActiveTab]         = useState<"tools" | "requests">("tools")
   const [showLogoutModal, setShowLogoutModal] = useState(false)
-  const [darkMode, setDarkMode]           = useState<boolean>(() => {
+const [unreadCount, setUnreadCount]     = useState<number>(0)
+const [darkMode, setDarkMode]           = useState<boolean>(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem("sg-theme") !== "light"
     }
@@ -118,6 +119,26 @@ export default function DashboardPage() {
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", darkMode ? "dark" : "light")
   }, [darkMode])
+
+  // ── IDLE TIMEOUT: 30 minutes ──
+  useEffect(() => {
+    const TIMEOUT = 30 * 60 * 1000
+    let timer: ReturnType<typeof setTimeout>
+    const reset = () => {
+      clearTimeout(timer)
+      timer = setTimeout(async () => {
+        await supabase.auth.signOut()
+        router.push("/login")
+      }, TIMEOUT)
+    }
+    const events = ["mousedown", "keydown", "touchstart", "scroll"]
+    events.forEach(e => window.addEventListener(e, reset))
+    reset()
+    return () => {
+      clearTimeout(timer)
+      events.forEach(e => window.removeEventListener(e, reset))
+    }
+  }, [router])
 
   const loadData = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession()
@@ -137,7 +158,16 @@ export default function DashboardPage() {
     const { data: r } = await supabase
       .from("requests").select("*").eq("requested_by", session.user.id)
       .order("id", { ascending: false }).returns<Request[]>()
-    setRequests(r ?? [])
+    const fetchedRequests = r ?? []
+    setRequests(fetchedRequests)
+
+    // Calculate unread notifications
+    const seenIds: string[] = JSON.parse(localStorage.getItem("sg-seen-requests") || "[]")
+    const unread = fetchedRequests.filter(
+      req => (req.status === "approved" || req.status === "denied") && !seenIds.includes(req.id)
+    ).length
+    setUnreadCount(unread)
+
     setLoading(false)
     setTimeout(() => setVisible(true), 80)
   }, [router])
@@ -197,6 +227,10 @@ export default function DashboardPage() {
     setTimeout(() => setModalOpen(false), 1200)
   }
 
+  const cancelRequest = async (id: string) => {
+    const { error } = await supabase.from("requests").delete().eq("id", id)
+    if (!error) await loadData()
+  }
   const logout = () => setShowLogoutModal(true)
   const confirmLogout = async () => { await supabase.auth.signOut(); router.push("/login") }
   const initials = (e: string) => e.split("@")[0].slice(0, 2).toUpperCase()
@@ -509,9 +543,17 @@ export default function DashboardPage() {
               <span className="sb-ico"><IcoBox /></span>My Tools
               {subscriptions.length > 0 && <span className="sb-count">{subscriptions.length}</span>}
             </button>
-            <button className={`sb-item${activeTab === "requests" ? " active" : ""}`} onClick={() => setActiveTab("requests")}>
+            <button className={`sb-item${activeTab === "requests" ? " active" : ""}`} onClick={() => {
+              setActiveTab("requests")
+              const seenIds = requests.map(r => r.id)
+              localStorage.setItem("sg-seen-requests", JSON.stringify(seenIds))
+              setUnreadCount(0)
+            }}>
               <span className="sb-ico"><IcoActivity /></span>My Requests
-              {requests.length > 0 && <span className="sb-count">{requests.length}</span>}
+              {unreadCount > 0
+                ? <span className="sb-count" style={{ background:"var(--red)", color:"#fff", border:"none" }}>{unreadCount}</span>
+                : requests.length > 0 && <span className="sb-count">{requests.length}</span>
+              }
             </button>
           </nav>
           <div className="sb-footer">
@@ -523,21 +565,21 @@ export default function DashboardPage() {
             <button className="sb-logout" onClick={logout} data-test="logout-btn" title="Sign out">
               <IcoLogout />
             </button>
-
-            {showLogoutModal && (
-              <div style={{ position:"fixed", inset:0, zIndex:999, background:"rgba(0,0,0,0.55)", backdropFilter:"blur(6px)", display:"flex", alignItems:"center", justifyContent:"center" }}>
-                <div style={{ background:"var(--s1)", border:"1px solid var(--b2)", borderRadius:12, padding:"28px 28px 22px", width:320, fontFamily:"var(--f)" }}>
-                  <div style={{ fontSize:15, fontWeight:800, color:"var(--t1)", marginBottom:8 }}>Sign out of SubGuard?</div>
-                  <div style={{ fontSize:13, color:"var(--t3)", marginBottom:22, fontWeight:400 }}>You will be returned to the login screen.</div>
-                  <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
-                    <button onClick={() => setShowLogoutModal(false)} style={{ padding:"8px 18px", borderRadius:8, border:"1px solid var(--b2)", background:"none", color:"var(--t2)", fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"var(--f)" }}>Cancel</button>
-                    <button onClick={confirmLogout} style={{ padding:"8px 18px", borderRadius:8, border:"1px solid var(--red-b)", background:"var(--red-d)", color:"var(--red)", fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"var(--f)" }}>Sign out</button>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         </aside>
+
+        {showLogoutModal && (
+          <div style={{ position:"fixed", inset:0, zIndex:999, background:"rgba(0,0,0,0.55)", backdropFilter:"blur(6px)", display:"flex", alignItems:"center", justifyContent:"center" }}>
+            <div style={{ background:"var(--s1)", border:"1px solid var(--b2)", borderRadius:12, padding:"28px 28px 22px", width:320, fontFamily:"var(--f)" }}>
+              <div style={{ fontSize:15, fontWeight:800, color:"var(--t1)", marginBottom:8 }}>Sign out of SubGuard?</div>
+              <div style={{ fontSize:13, color:"var(--t3)", marginBottom:22, fontWeight:400 }}>You will be returned to the login screen.</div>
+              <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
+                <button onClick={() => setShowLogoutModal(false)} style={{ padding:"8px 18px", borderRadius:8, border:"1px solid var(--b2)", background:"none", color:"var(--t2)", fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"var(--f)" }}>Cancel</button>
+                <button onClick={confirmLogout} style={{ padding:"8px 18px", borderRadius:8, border:"1px solid var(--red-b)", background:"var(--red-d)", color:"var(--red)", fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"var(--f)" }}>Sign out</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── TOPBAR ── */}
         <header className="topbar">
@@ -642,7 +684,17 @@ export default function DashboardPage() {
                             <td className="td"><span className="cost-val">${req.monthly_cost}/mo</span></td>
                             <td className="td"><span className="just-val" title={req.justification}>{req.justification}</span></td>
                             <td className="td">
-                              <span className={`badge ${req.status}`}><span className="bdot" />{req.status}</span>
+                              <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+                                <span className={`badge ${req.status}`}><span className="bdot" />{req.status}</span>
+                                {req.status === "pending" && (
+                                  <button
+                                    onClick={() => cancelRequest(req.id)}
+                                    style={{ fontSize:10, fontWeight:600, fontFamily:"var(--f)", background:"var(--red-d)", color:"var(--red)", border:"1px solid var(--red-b)", borderRadius:5, padding:"2px 7px", cursor:"pointer" }}
+                                  >
+                                    Cancel
+                                  </button>
+                                )}
+                              </div>
                               {req.status === "denied" && req.denial_reason && (
                                 <div style={{ fontSize:11, color:"var(--red)", marginTop:4, fontFamily:"var(--f)", fontWeight:400, maxWidth:200 }}>
                                   {req.denial_reason}
