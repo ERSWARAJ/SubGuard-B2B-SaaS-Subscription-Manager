@@ -1,0 +1,493 @@
+# SubGuard — Cursor AI Rules
+
+# Ailoitte Velocity Pod Hackathon
+
+# B2B SaaS Subscription Manager
+
+Cursor MUST follow these rules when generating or editing code.
+
+Violation of these rules will break the architecture and must NEVER occur.
+
+---
+
+# PROJECT OVERVIEW
+
+SubGuard is a **B2B SaaS internal subscription manager** built for the Ailoitte Velocity Pod Hackathon.
+
+Primary Goal:
+Help companies track SaaS tools, manage subscription requests, and control spending.
+
+Tech Stack:
+
+* Next.js 14 (App Router)
+* TypeScript (strict mode)
+* Supabase (Auth + Postgres + Realtime)
+* Custom CSS-in-JS (NO Tailwind)
+* Playwright (E2E testing)
+* Vercel (deployment)
+
+---
+
+# CORE PRINCIPLES
+
+Cursor must prioritize:
+
+1. Type Safety
+2. Security
+3. Deterministic E2E tests
+4. Clean architecture
+5. Hackathon speed with production discipline
+
+---
+
+# FILE STRUCTURE RULES
+
+Pages must ONLY exist inside `/app`.
+
+Required pages:
+
+app/login/page.tsx
+app/admin/page.tsx
+app/dashboard/page.tsx
+
+Supporting directories:
+
+lib/supabase.ts → single Supabase client
+components/ → reusable UI components
+e2e/subguard.spec.ts → Playwright tests
+public/logo.png → application logo
+
+Cursor MUST NOT create additional page routes unless explicitly requested.
+
+---
+
+# ROUTING RULES
+
+Root route:
+
+/ → redirect to `/login`
+
+After login:
+
+admin → `/admin`
+employee → `/dashboard`
+
+Authorization redirects:
+
+Admin page must redirect employees → `/dashboard`
+
+Dashboard page must redirect admins → `/admin`
+
+Unauthenticated users must ALWAYS redirect to:
+
+/login
+
+---
+
+# TYPESCRIPT RULES
+
+TypeScript strict mode is mandatory.
+
+Cursor must follow:
+
+• NEVER use `any`
+• NEVER use `// @ts-ignore`
+• NEVER disable TypeScript checking
+
+Every data structure must have an interface.
+
+Example:
+
+interface Subscription {
+id: string
+tool_name: string
+monthly_cost_cents: number
+user_id: string
+}
+
+All async functions MUST include return types.
+
+Example:
+
+async function fetchSubscriptions(): Promise<Subscription[]>
+
+useState must always include generics:
+
+const [requests, setRequests] = useState<Request[]>([])
+
+---
+
+# DATABASE RULES
+
+Supabase is the single source of truth.
+
+Tables:
+
+users
+subscriptions
+requests
+
+Schema expectations:
+
+users
+id (uuid)
+email
+role ('admin' | 'employee')
+
+subscriptions
+id
+tool_name
+monthly_cost_cents
+user_id
+
+requests
+id
+tool_name
+monthly_cost_cents
+justification
+status ('pending' | 'approved' | 'denied')
+requested_by
+denial_reason
+reviewed_by
+reviewed_at
+
+Money must ALWAYS be stored as **cents (integer)**.
+
+NEVER use floating point numbers for currency.
+
+---
+
+# SUPABASE RULES
+
+Supabase client must ONLY exist in:
+
+lib/supabase.ts
+
+Cursor must NEVER create additional Supabase clients.
+
+Always handle both:
+
+const { data, error } = await supabase.from("requests").select("*")
+
+Always use typed responses:
+
+.returns<Request[]>()
+
+Realtime updates must use:
+
+supabase.channel()
+
+Realtime channels must always be cleaned up with:
+
+supabase.removeChannel()
+
+---
+
+# RLS SECURITY RULES
+
+Row Level Security MUST always remain enabled.
+
+Employees:
+
+• read their own requests
+• insert requests
+• delete their own pending requests
+
+Admins:
+
+• read all requests
+• approve or deny requests
+• create subscriptions
+
+RLS must NEVER be disabled.
+
+Service role keys must NEVER appear in frontend code.
+
+---
+
+# AUTHENTICATION RULES
+
+Authentication must use:
+
+supabase.auth.getSession()
+
+Session checks must run on:
+
+admin dashboard
+employee dashboard
+
+Unauthorized users must redirect to `/login`.
+
+---
+
+# SECURITY RULES
+
+Sensitive values must ONLY come from:
+
+process.env
+
+Never hardcode:
+
+API keys
+database credentials
+admin credentials
+
+.env.local must NEVER be committed.
+
+Allowed localStorage keys:
+
+sg-theme
+sg-fail-count
+sg-lockout-until
+sg-seen-requests
+
+No other localStorage keys are allowed.
+
+---
+
+# RATE LIMITING
+
+Login rate limit:
+
+5 failed attempts → lockout for 5 minutes.
+
+Countdown must display remaining lockout time.
+
+Attempts remaining must be displayed to the user.
+
+---
+
+# SESSION RULES
+
+Admin and Employee dashboards must enforce:
+
+Idle session timeout = 30 minutes.
+
+On timeout:
+
+redirect → `/login`
+
+---
+
+# STYLING RULES
+
+Tailwind is strictly forbidden.
+
+All styling must use:
+
+CSS-in-JS via `<style>` blocks inside components.
+
+Colors must use CSS variables.
+
+Example:
+
+color: var(--t1)
+
+Never hardcode colors.
+
+Fonts:
+
+Inter → primary
+JetBrains Mono → monospace
+
+Border radii variables:
+
+--r: 8px
+--r2: 11px
+
+Theme switching:
+
+Dark mode = default.
+
+Theme must be stored using:
+
+localStorage.setItem("sg-theme")
+
+Theme must be applied using:
+
+document.documentElement.setAttribute("data-theme")
+
+---
+
+# UI COMPONENT RULES
+
+All pages must include:
+
+"use client"
+
+Icons must be inline SVG components.
+
+Loading state must include:
+
+Centered spinner + "Loading..." text.
+
+Modals must use:
+
+position: fixed
+inset: 0
+z-index: 999
+backdrop-filter: blur(6px)
+
+Modals must render at the root level.
+
+---
+
+# ADMIN DASHBOARD FEATURES
+
+Must include:
+
+• Real-time updates via Supabase
+• Spend analytics bar chart
+• Search across tabs
+• Denial reason modal
+• Manual subscription creation
+• Audit history
+• Theme toggle
+• Logout modal
+• 30 minute session timeout
+
+---
+
+# EMPLOYEE DASHBOARD FEATURES
+
+Must include:
+
+• Real-time updates
+• Request software modal
+• Cancel pending requests
+• Duplicate request prevention
+• Cost warning if > $500
+• Notification badge for reviewed requests
+• Denial reason display
+• Theme toggle
+• Logout modal
+• 30 minute session timeout
+
+---
+
+# PLAYWRIGHT TEST RULES
+
+Test file location:
+
+e2e/subguard.spec.ts
+
+Base URL must come from:
+
+process.env.PLAYWRIGHT_BASE_URL
+
+Default fallback:
+
+https://subguard-ailoitte.vercel.app
+
+Credentials must ONLY come from environment variables.
+
+Never hardcode credentials.
+
+Before each test, clear localStorage keys:
+
+sg-fail-count
+sg-lockout-until
+sg-seen-requests
+
+Required E2E flows:
+
+1. Admin login → sees total monthly spend ≥ 0
+2. Employee login → submits $50/month request
+3. Admin approves request → total spend increases by exactly $50
+
+Database must be reset before tests.
+
+---
+
+# TEST SELECTORS
+
+UI must include data-test attributes:
+
+login-email
+login-password
+login-submit
+login-error
+
+total-spend
+pending-request-row
+approve-btn
+deny-btn
+
+logout-btn
+
+request-software-btn
+subscription-card
+request-row
+
+request-modal
+request-tool-name
+request-monthly-cost
+request-justification
+request-submit-btn
+
+---
+
+# GIT RULES
+
+Primary repository:
+
+https://github.com/ERSWARAJ/SubGuard-B2B-SaaS-Subscription-Manager
+
+Primary branch:
+
+main
+
+Never commit:
+
+.env.local
+node_modules
+.next
+
+Always include:
+
+.env.example
+
+Commit message format:
+
+feat: new feature
+fix: bug fix
+ux: UI improvement
+config: configuration change
+chore: maintenance
+
+---
+
+# PERFORMANCE RULES
+
+Cursor must prefer server-side data fetching when possible.
+
+Avoid unnecessary client re-renders.
+
+Realtime subscriptions must unsubscribe on component unmount.
+
+---
+
+# ERROR HANDLING
+
+All Supabase operations must check for errors.
+
+Example:
+
+if (error) {
+console.error(error)
+}
+
+User-friendly messages must be displayed.
+
+Console logs must never expose secrets.
+
+---
+
+# FINAL RULE
+
+Cursor must NEVER break these rules when generating code.
+
+If a requested change conflicts with these rules, Cursor must:
+
+1. Explain the conflict
+2. Propose a safe alternative
