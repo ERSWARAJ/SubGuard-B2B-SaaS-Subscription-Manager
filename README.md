@@ -16,7 +16,7 @@ Built as part of the **Ailoitte Velocity Pod Hackathon** (48-hour sprint).
 
 | Layer | Technology |
 |---|---|
-| Frontend | Next.js 14 (App Router), TypeScript (strict) |
+| Frontend | Next.js (App Router), React, TypeScript (strict mode) |
 | Styling | Inline CSS with CSS variables — zero external UI libs |
 | Auth & DB | Supabase (Auth + PostgreSQL) |
 | Fonts | Inter + JetBrains Mono (Google Fonts) |
@@ -53,13 +53,13 @@ subguard/
 │   │   └── page.tsx          # Login page with role-based redirect
 │   ├── globals.css
 │   ├── layout.tsx
-│   └── page.tsx              # Root redirect
+│   └── page.tsx              # Root redirect to /login
 ├── lib/
 │   └── supabase.ts           # Supabase client initialisation
 ├── e2e/
-│   └── subguard.spec.ts      # Playwright E2E test suite
+│   └── subguard.spec.ts      # Playwright E2E test suite (3 mandatory flows)
 ├── public/
-├── .env.local                # Supabase credentials (not committed)
+├── .env.example              # Environment variable template (no real values)
 ├── playwright.config.ts
 ├── next.config.ts
 └── tsconfig.json
@@ -69,7 +69,7 @@ subguard/
 
 ## Database Schema
 
-All tables live in Supabase (PostgreSQL). UUIDs are used throughout.
+All tables live in Supabase (PostgreSQL). UUIDs are used throughout. Row Level Security (RLS) is enabled on all tables.
 
 ```sql
 -- Users (mirrors Supabase Auth)
@@ -110,29 +110,45 @@ requests (
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/your-org/subguard.git
-cd subguard
+git clone https://github.com/s-swaraj-devops/subguard-hackathon-ailoitte.git
+cd subguard-hackathon-ailoitte
 npm install
 ```
 
 ### 2. Configure environment variables
 
-Create a `.env.local` file in the project root:
+Copy `.env.example` to `.env.local` and fill in your values:
+
+```bash
+cp .env.example .env.local
+```
+
+Then edit `.env.local`:
 
 ```env
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+
+# Playwright E2E test credentials
+TEST_ADMIN_EMAIL=your_admin_email
+TEST_ADMIN_PASSWORD=your_admin_password
+TEST_EMPLOYEE_EMAIL=your_employee_email
+TEST_EMPLOYEE_PASSWORD=your_employee_password
 ```
+
+> ⚠️ Never commit `.env.local` — it is listed in `.gitignore`.
 
 ### 3. Seed the database
 
 Run the following in the [Supabase SQL Editor](https://supabase.com/dashboard):
 
 ```sql
--- Insert test users (IDs must match Supabase Auth user IDs)
+-- Create auth users first via Supabase Auth dashboard or API
+-- Then insert into public users table with matching UUIDs
 INSERT INTO users (id, email, role) VALUES
-  ('<admin-auth-uuid>',    'admin@subguard.com',    'admin'),
-  ('<employee-auth-uuid>', 'employee@subguard.com', 'employee');
+  ('<admin-auth-uuid>',    'admin@yourcompany.com',    'admin'),
+  ('<employee-auth-uuid>', 'employee@yourcompany.com', 'employee');
 ```
 
 ### 4. Run the development server
@@ -143,24 +159,22 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-| Credential | Value |
-|---|---|
-| Admin email | `admin@subguard.com` |
-| Admin password | `Admin@123` |
-| Employee email | `employee@subguard.com` |
-| Employee password | `Employee@123` |
-
 ---
 
 ## E2E Testing
 
-Manual testing is **not accepted** for submission. The Playwright suite must pass all three flows automatically.
+Manual testing is **strictly forbidden** per the hackathon mandate. The Playwright suite must pass all three flows automatically.
 
-### Install Playwright
+### Prerequisites
 
 ```bash
 npx playwright install chromium
+npm install -D @playwright/test dotenv
 ```
+
+### Configure test credentials
+
+Ensure your `.env.local` has the `TEST_*` variables set (see Environment Variables section above).
 
 ### Run tests
 
@@ -176,7 +190,15 @@ npx playwright test
 | 2 | Employee request | Employee logs in and submits a new $50/mo software request |
 | 3 | Admin approval | Admin approves the request; total spend increases by exactly $50 |
 
-Tests run sequentially (Flow 2 must precede Flow 3). Results are saved to `playwright-report/`.
+Tests run sequentially (1 worker) — Flow 2 must precede Flow 3. Results saved to `playwright-report/`.
+
+### Type-check before running tests
+
+```bash
+npx tsc --noEmit
+```
+
+Zero errors required. The codebase enforces **strict TypeScript** — no `any` types allowed.
 
 ---
 
@@ -186,7 +208,7 @@ Tests run sequentially (Flow 2 must precede Flow 3). Results are saved to `playw
 
 ```bash
 git add .
-git commit -m "feat: initial SubGuard release"
+git commit -m "feat: SubGuard release"
 git push origin main
 ```
 
@@ -197,29 +219,28 @@ Go to [vercel.com/new](https://vercel.com/new), import your GitHub repo, and set
 ```
 NEXT_PUBLIC_SUPABASE_URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY
 ```
+
+> Note: `TEST_*` variables are only needed locally for Playwright — do not add them to Vercel.
 
 ### 3. Deploy
 
 Vercel will auto-detect Next.js and deploy. No build configuration needed.
 
-### 4. Type-check before pushing
-
-```bash
-npx tsc --noEmit
-```
-
-Zero errors required. The codebase enforces **strict TypeScript** — no `any` types allowed.
-
 ---
 
 ## Security
 
-- No hardcoded credentials anywhere in the codebase
-- All auth handled by Supabase Auth (JWT-based)
-- Role is fetched server-side from the `users` table post-login — not trusted from the client
-- Strict TypeScript mode enabled (`tsconfig.json`)
-- Environment variables kept out of version control via `.gitignore`
+| Measure | Detail |
+|---|---|
+| No hardcoded credentials | Zero credentials in source code — all via environment variables |
+| Supabase Auth | JWT-based authentication via `signInWithPassword` |
+| Role enforcement | Role fetched from `users` table post-login — never trusted from client |
+| Row Level Security | RLS enabled on `users`, `requests`, `subscriptions` tables |
+| Strict TypeScript | `strict: true` in `tsconfig.json` — no `any` types anywhere |
+| Environment variables | `.env.local` excluded from version control via `.gitignore` |
+| `.env.example` | Placeholder template committed — no real values |
 
 ---
 
@@ -229,8 +250,9 @@ Zero errors required. The codebase enforces **strict TypeScript** — no `any` t
 |---|---|
 | Event | Ailoitte Velocity Pod Hackathon |
 | Time limit | 48 hours |
-| Team | 1 Architect + 1 Agentic QA Engineer |
+| Team composition | 1 Architect + 1 Agentic QA Engineer |
 | Submission requirement | GitHub repo with passing Playwright E2E suite |
+| Deployment | Vercel (live) |
 
 ---
 

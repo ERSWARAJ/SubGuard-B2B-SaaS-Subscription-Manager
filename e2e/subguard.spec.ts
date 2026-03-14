@@ -3,7 +3,7 @@ import dotenv from "dotenv"
 import path from "path"
 dotenv.config({ path: path.resolve(__dirname, "../.env.local") })
 
-const BASE_URL = "https://subguard-hackathon-ailoitte.vercel.app"
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || "https://subguard-hackathon-ailoitte.vercel.app"
 const ADMIN    = { email: process.env.TEST_ADMIN_EMAIL!,    password: process.env.TEST_ADMIN_PASSWORD! }
 const EMPLOYEE = { email: process.env.TEST_EMPLOYEE_EMAIL!, password: process.env.TEST_EMPLOYEE_PASSWORD! }
 
