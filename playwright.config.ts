@@ -10,7 +10,7 @@ export default defineConfig({
   timeout: 30000,
   reporter: [["html", { open: "never" }], ["list"]],
   use: {
-    baseURL: process.env.PLAYWRIGHT_BASE_URL || "https://subguard-hackathon-ailoitte.vercel.app",
+    baseURL: process.env.PLAYWRIGHT_BASE_URL || "https://subguard-ailoitte.vercel.app",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
   },
