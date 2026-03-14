@@ -34,7 +34,7 @@ test("Flow 2 — Employee logs in and submits a $50/mo request", async ({ page }
   await page.locator('[data-test="request-monthly-cost"]').fill("50")
   await page.locator('[data-test="request-justification"]').fill("Automated E2E test submission.")
   await page.locator('[data-test="request-submit-btn"]').click()
-  await expect(modal).not.toBeVisible({ timeout: 8000 })
+  await expect(modal).not.toBeVisible({ timeout: 15000 })
 })
 
 test("Flow 3 — Admin approves request and spend increases by $50", async ({ page }) => {

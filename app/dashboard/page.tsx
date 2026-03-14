@@ -224,7 +224,7 @@ const [darkMode, setDarkMode]           = useState<boolean>(() => {
     if (error) { setServerErr(error.message); return }
     setSubmitSuccess(true)
     await loadData()
-    setTimeout(() => setModalOpen(false), 1200)
+    setTimeout(() => setModalOpen(false), 800)
   }
 
   const cancelRequest = async (id: string) => {
