@@ -3,9 +3,18 @@ import dotenv from "dotenv"
 import path from "path"
 dotenv.config({ path: path.resolve(__dirname, "../.env.local") })
 
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || "https://subguard-hackathon-ailoitte.vercel.app"
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || "https://subguard-ailoitte.vercel.app"
 const ADMIN    = { email: process.env.TEST_ADMIN_EMAIL!,    password: process.env.TEST_ADMIN_PASSWORD! }
 const EMPLOYEE = { email: process.env.TEST_EMPLOYEE_EMAIL!, password: process.env.TEST_EMPLOYEE_PASSWORD! }
+
+test.beforeEach(async ({ page }) => {
+  await page.goto(`${BASE_URL}/login`)
+  await page.evaluate(() => {
+    localStorage.removeItem("sg-fail-count")
+    localStorage.removeItem("sg-lockout-until")
+    localStorage.removeItem("sg-seen-requests")
+  })
+})
 
 async function login(page: Page, email: string, password: string) {
   await page.goto(`${BASE_URL}/login`)
